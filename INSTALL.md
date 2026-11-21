@@ -55,6 +55,19 @@ Steam and SteamVR must be running first. The launcher starts the
   back in menus.
 - D-pad Up: ready a grenade, then squeeze with your throwing hand, point that controller where you want the grenade to go, and release its grip to throw.
 
+## Testing the sniper scope
+
+Quit Call of Duty 2 first. In Desktop Mode, with SteamVR running, run:
+
+```sh
+~/cod2-vr-work/launch-desktop.sh --scope-test
+```
+
+This opens a separate test profile and requests a scoped Mosin at the start
+of the mission. Press Y to switch to it if needed, then hold the left bumper
+or left trigger. Start the game normally afterward to return to your campaign
+profile.
+
 ## Checking without installing
 
 ```sh

@@ -2,6 +2,9 @@
 """Launch the original development renderer + native headset compositor."""
 from pathlib import Path
 import os
+import argparse
+import shutil
+import tempfile
 import fcntl
 import signal
 import struct
@@ -43,11 +46,31 @@ def tracking_advances(timeout=3):
     return False
 
 
-def main():
+def scope_test_options():
+    # Give the test run its own writable home, profile, and save directory.
+    # Steam still supplies the game assets from the regular installation.
+    home=Path(tempfile.mkdtemp(prefix='scope-test-',dir=ROOT))
+    players=home/'main/players'
+    profile=players/'scope_test'
+    profile.mkdir(parents=True)
+    (players/'active.txt').write_text('scope_test')
+    active=GAME/'main/players/active.txt'
+    if active.is_file():
+        config=active.parent/active.read_text().strip()/'config.cfg'
+        if config.is_file():shutil.copyfile(config,profile/'config.cfg')
+    print(f'Isolated sniper test profile: {home}',flush=True)
+    windows_home='Z:'+str(home).replace('/','\\')
+    return ['+set','fs_homepath',windows_home,'+set','thereisacow','1337','+devmap','demolition']
+
+
+def main(scope_test=False):
     resolution=os.environ.get('COD2VR_RESOLUTION','1920x1080')
     samples=os.environ.get('COD2VR_MSAA','2')
     if resolution not in ('1280x720','1920x1080','2560x1440','2880x1620') or samples not in ('1','2','4'):
         raise ValueError('Use a supported COD2VR_RESOLUTION (1280x720, 1920x1080, 2560x1440, 2880x1620) and COD2VR_MSAA (1, 2, 4).')
+    executable=GAME/'CoD2SP_s.exe'
+    if scope_test and running(executable):
+        raise RuntimeError('Quit Call of Duty 2 before starting the isolated sniper test.')
     (GAME/'cod2vr-mode.txt').write_text('2\n')
     (GAME/'cod2vr-hands.txt').write_text('1\n')
     (GAME/'cod2vr-fire.txt').write_text('1\n')
@@ -71,13 +94,14 @@ def main():
         log.close()
     if not tracking_advances(timeout=10):
         raise RuntimeError('Headset compositor is not publishing live tracking; inspect game-viewer.log')
-    if not running(GAME/'CoD2SP_s.exe'):
+    if not running(executable):
         print(f'COD2 VR render settings: {resolution}, r_aaSamples={samples}',flush=True)
         evaluate(f'SteamClient.Apps.SetAppResolutionOverride(2630,"{resolution}")')
         args=['steam','-applaunch','2630','+set','monkeytoy','0',
               '+set','r_mode',resolution,'+set','r_fullscreen','0',
               '+set','cg_drawCrosshair','0','+set','developer','1','+set','r_smp_backend','0',
-              '+set','r_glow','0','+set','r_aasamples',samples,'+map','demolition']
+              '+set','r_glow','0','+set','r_aasamples',samples]
+        args+=scope_test_options() if scope_test else ['+map','demolition']
         subprocess.run(args,check=True,stdout=subprocess.DEVNULL)
     # Engine IPC avoids routing physical keyboard events into the chat/system UI.
     # Wait for actual fresh game eye frames before hiding the desktop panel.
@@ -92,6 +116,10 @@ def main():
             with (ROOT/'transport/frame.bin').open('rb') as f:
                 header=struct.unpack('<8I',f.read(32))
             if header[0]==0x43565246 and header[2]!=initial and not header[2]&1:
+                if scope_test:
+                    game_command('give mosin_nagant_sniper',timeout=2)
+                    game_command('give ammo',timeout=2)
+                    print('Sniper test inventory requested. Use Y to switch to the scoped Mosin, then hold left bumper or left trigger.',flush=True)
                 for command in ['hud_fade_compass 30','cg_drawHUD 1','cg_drawCrosshair 0']:
                     try:game_command(command,timeout=2)
                     except (OSError,RuntimeError,TimeoutError) as error:print('Game command:',error,file=sys.stderr)
@@ -111,9 +139,12 @@ def main():
 
 
 if __name__=='__main__':
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--scope-test',action='store_true',help='Start a separate test profile and grant a scoped Mosin')
+    args=parser.parse_args()
     with (ROOT/'launch.lock').open('a') as lock:
         try:fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
         except BlockingIOError:
             print('Call of Duty 2 VR is already starting.')
             raise SystemExit(0)
-        raise SystemExit(main())
+        raise SystemExit(main(args.scope_test))
