@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.log
+*.bin
+*.iwd
+*.ff
+*.xwd
+*.obj
+*.o
+*.lib
+src/**/build/
+install-backups/
+CoD2SP_s.exe
+gfx_cod2vr_original.dll
+.ready-to-push

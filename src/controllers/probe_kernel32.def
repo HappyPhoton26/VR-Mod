@@ -1,0 +1,15 @@
+LIBRARY kernel32.dll
+EXPORTS
+GetModuleHandleA
+CreateFileA
+WriteFile
+CloseHandle
+VirtualAlloc
+VirtualProtect
+VirtualQuery
+FlushInstructionCache
+GetCurrentProcess
+GetProcAddress
+ReadFile
+CreateFileMappingA
+MapViewOfFile

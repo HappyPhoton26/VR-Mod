@@ -1,0 +1,75 @@
+/* Original low-bandwidth HUD extraction. The world is captured before 2D UI;
+ * compare that image against the completed frame to preserve the game's own
+ * HUD artwork and indicators without another flat desktop panel. */
+static int hud_surfaces(void){
+ if(!ipc_enabled)return 0;
+ void *device=*(void **)(base+0x1d1bf8);if(!device)return 0;
+ if(!hud_map)hud_map=map_file("Z:\\home\\steamos\\cod2-vr-work\\transport\\hud.bin",CV_HUD_MAP_BYTES);
+ if(!hud_map)return 0;
+ void **vt=*(void ***)device;
+ typedef i32 (__stdcall *CreateRT)(void *,u32,u32,u32,u32,u32,i32,void **,void *);
+ typedef i32 (__stdcall *CreateOffscreen)(void *,u32,u32,u32,u32,void **,void *);
+ if(!hud_gpu&&((CreateRT)vt[28])(device,CV_HUD_WIDTH,CV_HUD_HEIGHT,21,0,0,0,&hud_gpu,0)<0)return 0;
+ if(!hud_before_surface&&((CreateOffscreen)vt[36])(device,CV_HUD_WIDTH,CV_HUD_HEIGHT,21,2,&hud_before_surface,0)<0)return 0;
+ if(!hud_after_surface&&((CreateOffscreen)vt[36])(device,CV_HUD_WIDTH,CV_HUD_HEIGHT,21,2,&hud_after_surface,0)<0)return 0;
+ return 1;
+}
+static int hud_snapshot(void *source,void *destination){
+ if(!source||!hud_gpu||!destination)return 0;
+ void *device=*(void **)(base+0x1d1bf8);if(!device)return 0;
+ typedef i32 (__stdcall *Stretch)(void *,void *,const Rect *,void *,const Rect *,u32);
+ typedef i32 (__stdcall *Readback)(void *,void *,void *);
+ void **vt=*(void ***)device;
+ if(((Stretch)vt[34])(device,source,0,hud_gpu,0,2)<0)return 0;
+ return ((Readback)vt[32])(device,hud_gpu,destination)>=0;
+}
+static void hud_capture_before(void *source){
+ hud_prepared=0;
+ if(hud_surfaces()&&hud_snapshot(source,hud_before_surface)){
+  hud_before_frame=frame_count;hud_prepared=1;
+ }
+}
+static void hud_publish_after(void){
+ if(!ipc_enabled||!base)return;
+ u32 menu=(*(u32 *)0x617f04&8u)!=0;
+ if((!hud_prepared||hud_before_frame!=frame_count)&&!menu)return;
+ if(!hud_surfaces())return;
+ void *source=*(void **)(base+0x1d4820+4);
+ if(!hud_snapshot(source,hud_after_surface))return;
+ typedef struct {i32 pitch;void *bits;} HudLock;
+ typedef i32 (__stdcall *Lock)(void *,HudLock *,const Rect *,u32);
+ typedef i32 (__stdcall *Unlock)(void *);
+ HudLock before={0},after={0};int locked_before=0;
+ if(!menu){
+  if(((Lock)(*(void ***)hud_before_surface)[13])(hud_before_surface,&before,0,0x10)<0)return;
+  locked_before=1;
+ }
+ if(((Lock)(*(void ***)hud_after_surface)[13])(hud_after_surface,&after,0,0x10)<0){
+  if(locked_before)((Unlock)(*(void ***)hud_before_surface)[14])(hud_before_surface);return;
+ }
+ u32 slot=(hud_map->slot+1u)%3u,generation=hud_map->generation[slot]&~1u;
+ hud_map->generation[slot]=generation+1u;fence();
+ u8 *pixels=(u8 *)hud_map+64u+slot*CV_HUD_SLOT_BYTES;
+ memset(pixels,0,CV_HUD_SLOT_BYTES);
+ u32 visible=0;
+ for(u32 y=0;y<CV_HUD_HEIGHT;y++){
+  const u8 *a=(const u8 *)after.bits+y*after.pitch;
+  const u8 *b=locked_before?(const u8 *)before.bits+y*before.pitch:0;
+  for(u32 x=0;x<CV_HUD_WIDTH;x++){
+   u32 index=4*x;int difference=0;
+   if(!menu)for(u32 c=0;c<3;c++){int d=(int)a[index+c]-(int)b[index+c];difference+=d<0?-d:d;}
+   if(menu||difference>9){
+    u8 *out=pixels+(y*CV_HUD_WIDTH+x)*4u;
+    out[0]=a[index];out[1]=a[index+1];out[2]=a[index+2];out[3]=255;visible++;
+   }
+  }
+ }
+ ((Unlock)(*(void ***)hud_after_surface)[14])(hud_after_surface);
+ if(locked_before)((Unlock)(*(void ***)hud_before_surface)[14])(hud_before_surface);
+ hud_map->magic=CV_HUD_MAGIC;hud_map->version=CV_HUD_VERSION;
+ hud_map->width=CV_HUD_WIDTH;hud_map->height=CV_HUD_HEIGHT;hud_map->stride=CV_HUD_WIDTH*4u;
+ hud_map->reserved[0]=menu;hud_map->reserved[1]=visible;
+ fence();hud_map->generation[slot]=generation+2u;fence();hud_map->slot=slot;
+ fence();hud_map->sequence=(hud_map->sequence&~1u)+2u;
+ if(hud_published++<3){log_hex("HUD pixels",visible);log_hex("HUD menu",menu);}
+}

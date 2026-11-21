@@ -1,0 +1,14 @@
+LIBRARY KERNEL32.dll
+EXPORTS
+LoadLibraryA
+GetProcAddress
+GetModuleFileNameA
+GetEnvironmentVariableA
+CreateFileA
+WriteFile
+ReadFile
+CloseHandle
+FlushFileBuffers
+VirtualProtect
+CreateFileMappingA
+MapViewOfFile

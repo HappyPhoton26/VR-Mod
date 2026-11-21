@@ -1,0 +1,18 @@
+LIBRARY KERNEL32.dll
+EXPORTS
+GetModuleHandleA
+GetProcAddress
+CreateFileA
+CreateFileMappingA
+MapViewOfFile
+CloseHandle
+WriteFile
+ReadFile
+FlushFileBuffers
+GetTickCount
+VirtualProtect
+VirtualAlloc
+VirtualQuery
+FlushInstructionCache
+GetCurrentProcess
+GetCurrentProcessId
