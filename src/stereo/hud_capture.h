@@ -41,7 +41,7 @@ static void hud_publish_after(void){
  /* Keep recent gameplay transitions transparent even if the UI catcher
   * briefly takes over while the world is missing or changing targets. */
  int opaque_menu=menu&&(hud_menu_clean||hud_frames_without_world>=90);
- int captured=(compare||opaque_menu)&&hud_snapshot(source,hud_after_surface);
+ int captured=(opaque_menu||(compare&&!scope_binoculars))&&hud_snapshot(source,hud_after_surface);
  typedef struct {i32 pitch;void *bits;} HudLock;
  typedef i32 (__stdcall *Lock)(void *,HudLock *,const Rect *,u32);
  typedef i32 (__stdcall *Unlock)(void *);

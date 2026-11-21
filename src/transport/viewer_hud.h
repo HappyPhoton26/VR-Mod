@@ -36,8 +36,8 @@ static int hud_fresh(void){
 static void draw_hud_eye(XrFovf fov){
     if(!hud_fresh())return;
     float distance=hud_menu?1.8f:1.5f;
-    float half_width=(hud_menu?1.65f:1.28f)*.5f/distance;
-    float half_height=(hud_menu?.928125f:.72f)*.5f/distance;
+    float half_width=(hud_menu?1.65f:1.10f)*.5f/distance;
+    float half_height=(hud_menu?.928125f:.61875f)*.5f/distance;
     float left=tanf(fov.angleLeft),right=tanf(fov.angleRight);
     float down=tanf(fov.angleDown),up=tanf(fov.angleUp);
     if(!(right>left&&up>down))return;

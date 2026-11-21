@@ -51,6 +51,8 @@ Steam and SteamVR must be running first. The launcher starts the
 - Right bumper: reload
 - Grips: pick up nearby items. Hold the rifle's foregrip with the left hand.
 - Left trigger or left bumper: hold to look through the equipped sniper rifle's scope.
+- Hold B to look through binoculars when the mission provides them. B goes
+  back in menus.
 - D-pad Up: ready a grenade, then squeeze with your throwing hand, point that controller where you want the grenade to go, and release its grip to throw.
 
 ## Checking without installing

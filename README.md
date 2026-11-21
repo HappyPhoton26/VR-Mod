@@ -33,6 +33,8 @@ Optional: `./Play-COD2-VR.sh --check` validates without changes;
 - Menu/View opens menus; right bumper reloads; grips pick up nearby items.
 - Hold the left trigger or left bumper with a sniper rifle equipped to use its
   magnified scope.
+- Hold B to look through binoculars when the mission provides them. B goes
+  back in menus.
 - D-pad Up prepares a frag. Squeeze with your throwing hand, point that controller where you want
   the grenade to go, then release its grip to throw.
 - Squeeze the left grip near the rifle foregrip to steady it with both hands.

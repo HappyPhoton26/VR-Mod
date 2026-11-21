@@ -40,6 +40,7 @@ static int controller_probe_attempted;
 static int input_attempted;
 static void (__cdecl *input_tick)(void);
 static int (__cdecl *input_scope_requested)(void);
+static int (__cdecl *input_binoculars_requested)(void);
 static int sbs_enabled,hook_ready,eye=-1,world_seen,have_world;
 static void *setup_view;
 static void *left_surface,*right_surface;
@@ -49,7 +50,7 @@ static void *hud_gpu,*hud_before_surface,*hud_after_surface;
 static CvHudTransport *hud_map;
 static CvScopeTransport *scope_map;
 static void *scope_gpu,*scope_readback;
-static int scope_active,scope_captured,scope_view_applied,scope_native_overlay;
+static int scope_active,scope_captured,scope_view_applied,scope_native_overlay,scope_binoculars;
 static float scope_fov;
 static u32 scope_frames;
 static u8 scope_ref[0x58];
@@ -187,7 +188,9 @@ static int eye_projection(void *view){
  if(!tracking_valid)return 0;float *p=(float *)((u8 *)view+0x88);
  if(eye==2){
   p[0]=p[5]=1/tangent(scope_fov*.00872664626f);
-  if(scope_native_overlay)p[0]*=(float)surface_height/surface_width;
+  if(scope_binoculars){
+   p[5]=1/tangent(((const float *)scope_ref)[5]*.00872664626f);
+  }else if(scope_native_overlay)p[0]*=(float)surface_height/surface_width;
   p[8]=p[9]=0;
  }
  else{CvFov f=tracking.fov[eye];
@@ -411,7 +414,7 @@ static int install_backend(void){
  hook_ready=0;log_text("Backend table protection change failed\n");return 0;
 }
 static void begin_hook(void){
- frame_count++;tracked_eye_mask=0;hud_prepared=hud_menu_clean=0;world_seen=0;have_world=0;eye=-1;scope_active=scope_captured=scope_view_applied=scope_native_overlay=0;
+ frame_count++;tracked_eye_mask=0;hud_prepared=hud_menu_clean=0;world_seen=0;have_world=0;eye=-1;scope_active=scope_captured=scope_view_applied=scope_native_overlay=scope_binoculars=0;
  /* Shutdown(false) can reset the renderer without a new GetRefAPI call.
   * Reattach only after checking the current canonical/owned handler pair. */
  if(sbs_enabled)install_backend();
@@ -423,6 +426,7 @@ static void begin_hook(void){
    if(init&&init()){
     input_tick=(void (__cdecl *)(void))GetProcAddress(module,"cod2vr_input_tick");
     input_scope_requested=(int (__cdecl *)(void))GetProcAddress(module,"cod2vr_input_scope_requested");
+    input_binoculars_requested=(int (__cdecl *)(void))GetProcAddress(module,"cod2vr_input_binoculars_requested");
     log_text("Gameplay input DLL initialized\n");
    }
   }

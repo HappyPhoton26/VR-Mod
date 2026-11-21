@@ -12,7 +12,7 @@ static int scope_surfaces(void){
 static void scope_header(unsigned active,unsigned native_overlay){
  scope_map->magic=CV_SCOPE_MAGIC;scope_map->version=CV_SCOPE_VERSION;
  scope_map->width=scope_map->height=CV_SCOPE_SIZE;scope_map->stride=CV_SCOPE_SIZE*4;
- scope_map->reserved[0]=active;scope_map->reserved[1]=native_overlay;fence();scope_map->sequence=(scope_map->sequence&~1u)+2;
+ scope_map->reserved[0]=active;scope_map->reserved[1]=native_overlay;scope_map->reserved[2]=active&&scope_binoculars;fence();scope_map->sequence=(scope_map->sequence&~1u)+2;
 }
 static void scope_off(void){
  if(scope_map)scope_header(0,0);
@@ -20,6 +20,15 @@ static void scope_off(void){
 static int scope_prepare(const float *ref){
  scope_active=0;
  if(!ipc_enabled||!tracking_valid||(*(u32 *)0x617f04&8u))return 0;
+ if(input_binoculars_requested&&input_binoculars_requested()){
+  /* Stock ADS confirms that binoculars are available and raised. Use
+   * the game's zoom and compose its full two-lens mask at frame end. */
+  if(!(ref[4]>1&&ref[4]<40&&ref[5]>1&&ref[5]<40)||!scope_surfaces())return 0;
+  memcpy(scope_ref,ref,sizeof(scope_ref));
+  tracked_ref((float *)scope_ref,tracking.head.pose);
+  scope_fov=ref[4];scope_active=scope_native_overlay=scope_binoculars=1;
+  return 1;
+ }
  int controller_ads=input_scope_requested&&input_scope_requested();
  unsigned weapon=*(u32 *)(0xf708e8+0xb0);
  static int request_logged;
@@ -100,13 +109,13 @@ static Rect scope_center_square(void){
 }
 static int scope_capture_world(void *source){
  Rect square=scope_center_square();
- return scope_capture(source,scope_native_overlay?&square:0,0);
+ return scope_capture(source,scope_native_overlay&&!scope_binoculars?&square:0,0);
 }
 static void scope_capture_native(void){
  if(!scope_native_overlay||!scope_view_applied||!hud_prepared||(*(u32 *)0x617f04&8u))return;
  void *target=*(void **)(base+0x1d4820+4);
  Rect square=scope_center_square();
- if(target==hud_before_target)scope_capture(target,&square,1);
+ if(target==hud_before_target)scope_capture(target,scope_binoculars?0:&square,1);
 }
 /* Reuse a magnified crop only when the dedicated pass fails. Locate the
  * rifle's aim ray in the already rendered right eye to center the crop. */

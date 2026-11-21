@@ -157,9 +157,9 @@ static int read_input(void){
  return 0;
 }
 static void holds(U32 desired){
- static const char *down[]={"+attack 250 0\n","+gostand 251 0\n","+reload 252 0\n","+activate 253 0\n","toggleads\n","+frag 254 0\n","+smoke 255 0\n","+melee_breath 249 0\n"};
- static const char *up[]={"-attack 250 0\n","-gostand 251 0\n","-reload 252 0\n","-activate 253 0\n","leaveads\n","-frag 254 0\n","-smoke 255 0\n","-melee_breath 249 0\n"};
- U32 changed=held^desired;for(U32 i=0;i<8;i++)if(changed&(1u<<i))command((desired&(1u<<i))?down[i]:up[i]);
+ static const char *down[]={"+attack 250 0\n","+gostand 251 0\n","+reload 252 0\n","+activate 253 0\n","toggleads\n","+frag 254 0\n","+smoke 255 0\n","+melee_breath 249 0\n","+binoculars 248 0\n"};
+ static const char *up[]={"-attack 250 0\n","-gostand 251 0\n","-reload 252 0\n","-activate 253 0\n","leaveads\n","-frag 254 0\n","-smoke 255 0\n","-melee_breath 249 0\n","-binoculars 248 0\n"};
+ U32 changed=held^desired;for(U32 i=0;i<sizeof down/sizeof *down;i++)if(changed&(1u<<i))command((desired&(1u<<i))?down[i]:up[i]);
  if(changed)log_hex("Held gameplay mask",desired);held=desired;
 }
 static float axis(float value){if(value!=value)return 0;if(value>1)value=1;if(value<-1)value=-1;float a=value<0?-value:value;return a<.18f?0:(value<0?-1:1)*(a-.18f)/.82f;}
@@ -302,6 +302,9 @@ static void install_pickup_hook(void){
 }
 __declspec(dllexport) int __cdecl cod2vr_input_scope_requested(void){
  return (held&16u)&&!*(U32 *)0x617f04&&(U32)(GetTickCount()-last_changed_ms)<=250u;
+}
+__declspec(dllexport) int __cdecl cod2vr_input_binoculars_requested(void){
+ return (held&256u)&&!*(U32 *)0x617f04&&(U32)(GetTickCount()-last_changed_ms)<=250u;
 }
 static void __cdecl after_fire_params(float *parameters,void *entity){
 #ifdef CV_ABI_SELFTEST
@@ -454,6 +457,7 @@ static void process_buttons(int active){
   if(buttons&CV_BUTTON_A)desired|=2;
   if(buttons&CV_BUTTON_RIGHT_BUMPER)desired|=4;
   if(buttons&CV_BUTTON_X)desired|=8;
+  if(buttons&CV_BUTTON_B)desired|=256;
   if((input.active_mask&CV_INPUT_LEFT_ACTIVE)&&
      (input.trigger[0]>((held&16u)?.12f:.25f)||(buttons&CV_BUTTON_LEFT_BUMPER)))desired|=16;
   if(frag_primed)desired|=32;

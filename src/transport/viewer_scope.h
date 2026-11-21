@@ -1,7 +1,7 @@
 #include "../include/vr_scope.h"
 static CvScopeTransport *scope_data;
 static unsigned char scope_pixels[CV_SCOPE_SLOT_BYTES];
-static unsigned scope_sequence,scope_uploaded,scope_visible,scope_native_reticle;
+static unsigned scope_sequence,scope_uploaded,scope_visible,scope_native_reticle,scope_binocular_view;
 static double scope_received_at;
 static GLuint scope_texture,scope_fbo;
 static XrSwapchain scope_chain;
@@ -34,12 +34,18 @@ static void receive_scope(void){
  for(unsigned i=3;i<CV_SCOPE_SLOT_BYTES;i+=4)scope_pixels[i]=255;
  glBindTexture(GL_TEXTURE_2D,scope_texture);
  glTexSubImage2D(GL_TEXTURE_2D,0,0,0,CV_SCOPE_SIZE,CV_SCOPE_SIZE,GL_BGRA,GL_UNSIGNED_BYTE,scope_pixels);
- scope_sequence=sequence;scope_visible=1;scope_native_reticle=h.reserved[1];scope_received_at=clock_s();
+ scope_sequence=sequence;scope_visible=1;scope_native_reticle=h.reserved[1];scope_binocular_view=h.reserved[2];scope_received_at=clock_s();
 }
 static void scope_draw_circle(void){
  glDisable(GL_DEPTH_TEST);glDisable(GL_BLEND);
  glMatrixMode(GL_PROJECTION);glLoadIdentity();glMatrixMode(GL_MODELVIEW);glLoadIdentity();
  glEnable(GL_TEXTURE_2D);glBindTexture(GL_TEXTURE_2D,scope_texture);glColor4f(1,1,1,1);
+ if(scope_binocular_view){
+  glBegin(GL_QUADS);
+  glTexCoord2f(0,1);glVertex2f(-1,-1);glTexCoord2f(1,1);glVertex2f(1,-1);
+  glTexCoord2f(1,0);glVertex2f(1,1);glTexCoord2f(0,0);glVertex2f(-1,1);
+  glEnd();glDisable(GL_TEXTURE_2D);return;
+ }
  glBegin(GL_TRIANGLE_FAN);glTexCoord2f(.5f,.5f);glVertex2f(0,0);
  for(unsigned i=0;i<=128;i++){
   float a=(float)i*6.28318530718f/128,c=cosf(a),s=sinf(a);
@@ -76,7 +82,7 @@ static int scope_quad_layer(XrSpace head_space,XrCompositionLayerQuad *layer){
  *layer=(XrCompositionLayerQuad){XR_TYPE_COMPOSITION_LAYER_QUAD};
  layer->layerFlags=XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;layer->space=head_space;
  layer->eyeVisibility=XR_EYE_VISIBILITY_BOTH;layer->pose.orientation.w=1;layer->pose.position.z=-1.5f;
- layer->size=(XrExtent2Df){1.1f,1.1f};layer->subImage.swapchain=scope_chain;
+ layer->size=scope_binocular_view?(XrExtent2Df){1.8f,1.0125f}:(XrExtent2Df){1.1f,1.1f};layer->subImage.swapchain=scope_chain;
  layer->subImage.imageRect.extent=(XrExtent2Di){CV_SCOPE_SIZE,CV_SCOPE_SIZE};return 1;
 }
 static void scope_viewer_close(void){
