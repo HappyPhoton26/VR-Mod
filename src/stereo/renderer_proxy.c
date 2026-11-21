@@ -52,6 +52,8 @@ static u32 scope_frames;
 static u8 scope_ref[0x58];
 typedef int (__cdecl *ScopeAim)(CvPose *,unsigned long long *,long long *);
 static ScopeAim scope_aim;
+static void *hud_before_target;
+static u32 hud_frames_without_world=90;
 static u32 hud_before_frame,hud_prepared,hud_published;
 static CvImageTransport *image_map;
 static volatile CvPoseTransport *pose_map;
@@ -304,10 +306,17 @@ static void cmd_viewport(void *context){
    if(eye==2)scope_capture(target);
    else blit(target,right_surface,0);
    publish_images();
-   Rect left={0,0,(i32)surface_width/2,(i32)surface_height};
-   Rect right={(i32)surface_width/2,0,(i32)surface_width,(i32)surface_height};
-   blit(left_surface,target,&left);blit(right_surface,target,&right);replay_count++;
-   hud_capture_before(target);
+   if(ipc_enabled){
+    /* Headset stereo already comes from the eye surfaces. Give the game's
+     * remaining 2D draws a single full-width view as their background. */
+    hud_prepared=0;
+    if(blit(left_surface,target,0))hud_capture_before(target);
+   }else{
+    Rect left={0,0,(i32)surface_width/2,(i32)surface_height};
+    Rect right={(i32)surface_width/2,0,(i32)surface_width,(i32)surface_height};
+    blit(left_surface,target,&left);blit(right_surface,target,&right);
+   }
+   replay_count++;
    if(replay_count<4)log_hex("Stereo replay frame",replay_count);
   }
   if(world_view){memcpy(world_view,saved_world_view,sizeof(saved_world_view));world_view=0;}
@@ -345,7 +354,7 @@ static int install_backend(void){
  hook_ready=0;log_text("Backend table protection change failed\n");return 0;
 }
 static void begin_hook(void){
- frame_count++;world_seen=0;have_world=0;eye=-1;scope_active=scope_captured=0;
+ frame_count++;hud_prepared=0;world_seen=0;have_world=0;eye=-1;scope_active=scope_captured=0;
  /* Shutdown(false) can reset the renderer without a new GetRefAPI call.
   * Reattach only after checking the current canonical/owned handler pair. */
  if(sbs_enabled)install_backend();

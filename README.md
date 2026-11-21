@@ -29,6 +29,8 @@ Optional: `./Play-COD2-VR.sh --check` validates without changes;
   to set resolution and hide the flat theater panel.
 - Default resolution: 2880x1620; launcher starts the `demolition` mission.
 - Menu/View opens menus; right bumper reloads; grips pick up nearby items.
+- D-pad Up prepares a frag. Squeeze with the throwing hand, aim, then release
+  that grip to throw.
 - Squeeze the left grip near the rifle foregrip to steady it with both hands.
   The headset displays the full native HUD, including context-sensitive indicators.
 - Stereo, tracking and actual-game scope rendering were exercised locally.

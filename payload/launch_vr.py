@@ -71,7 +71,7 @@ def main():
         evaluate('SteamClient.Apps.SetAppResolutionOverride(2630,"2880x1620")')
         args=['steam','-applaunch','2630','+set','monkeytoy','0',
               '+set','r_mode','2880x1620','+set','r_fullscreen','0',
-              '+set','developer','1','+set','r_smp_backend','0',
+              '+set','cg_drawCrosshair','0','+set','developer','1','+set','r_smp_backend','0',
               '+set','r_glow','0','+set','r_aasamples','1','+map','demolition']
         subprocess.run(args,check=True,stdout=subprocess.DEVNULL)
     # Engine IPC avoids routing physical keyboard events into the chat/system UI.
@@ -87,7 +87,7 @@ def main():
             with (ROOT/'transport/frame.bin').open('rb') as f:
                 header=struct.unpack('<8I',f.read(32))
             if header[0]==0x43565246 and header[2]!=initial and not header[2]&1:
-                for command in ['hud_fade_compass 30','cg_drawHUD 1']:
+                for command in ['hud_fade_compass 30','cg_drawHUD 1','cg_drawCrosshair 0']:
                     try:game_command(command,timeout=2)
                     except (OSError,RuntimeError,TimeoutError) as error:print('Game command:',error,file=sys.stderr)
                 evaluate(hide_expression)

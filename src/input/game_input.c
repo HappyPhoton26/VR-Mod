@@ -177,6 +177,9 @@ static int readable(U32 address,U32 bytes){
 static void *cursor_hints_original=(void *)0x534d40;
 static CvPickupGripState pickup_grips;
 static U32 pickup_last_scan;
+static int frag_primed,frag_hand=-1,frag_aim_valid;
+static U32 frag_aim_time,crouch_after;
+static float frag_basis[22];
 static volatile CvHandContactDebug *pickup_contact;
 __declspec(dllexport) struct {
  U32 version,scans,attempts,successes,last_entity,last_hand,last_item;
@@ -218,6 +221,7 @@ static void __cdecl pickup_update(void *player){
  if(player!=(void *)0x1b15f00||!snapshot||*(U32 *)0x617f04)return;
  if(!read_input()){pickup_grips=(CvPickupGripState){0};return;}
  unsigned available=cv_pickup_grips(&pickup_grips,input.active_mask,input.grip);
+ if(frag_primed)available=0;
  if(!available)return;
  U32 now=GetTickCount();if((U32)(now-pickup_last_scan)<100)return;pickup_last_scan=now;
  U32 ent=(U32)player;
@@ -252,12 +256,11 @@ static void __cdecl pickup_update(void *player){
   for(unsigned h=0;h<2;h++)if(available&(1u<<h)){
    float distance=cv_pickup_distance(hand[h],lo,hi);
    if(distance<0||distance>best_distance)continue;
-   if(!native_can_pickup((void *)client,(void *)item))continue;
+   if(kind==2&&!native_can_pickup((void *)client,(void *)item))continue;
    best=item;best_hand=h;best_distance=distance;
   }
  }
  if(!best)return;
- pickup_grips.consumed|=1u<<best_hand;
  U32 before=pickup_inventory_signature(client),item_before=*(unsigned short *)(best+0x158);
  cod2vr_pickup_debug.attempts++;cod2vr_pickup_debug.last_entity=(best-0x1b15f00)/0x1fc;
  cod2vr_pickup_debug.last_hand=best_hand;cod2vr_pickup_debug.last_item=item_before;
@@ -267,6 +270,7 @@ static void __cdecl pickup_update(void *player){
  ((void (__cdecl *)(void *,void *,int))0x521a90)((void *)best,player,0);
  log_hex("Grip pickup item",item_before);log_hex("Grip pickup hand",best_hand);
  if(!*(U8 *)(best+0xa4)||*(unsigned short *)(best+0x158)!=item_before||pickup_inventory_signature(client)!=before){
+  pickup_grips.consumed|=1u<<best_hand;
   cod2vr_pickup_debug.successes++;log_text("Grip pickup completed through native inventory rules\n");
  }
 }
@@ -300,7 +304,7 @@ static void __cdecl after_fire_params(float *parameters,void *entity){
  abi_seen_parameters=parameters;abi_seen_entity=entity;
 #endif
  /* This engine helper is shared by many actors. Never alter AI or non-player
-  * fire. Weapon type0 is a bullet; leave grenade/rocket paths untouched. */
+  * fire. */
  if(entity!=(void *)0x1b15f00)return;
  player_fire_calls++;if(player_fire_calls<=8)log_hex("Player fire parameters",player_fire_calls);
  if(!fire_enabled||!snapshot)return;
@@ -308,6 +312,15 @@ static void __cdecl after_fire_params(float *parameters,void *entity){
  if(!readable((U32)parameters,0x40))return;
  U32 definition=*(U32 *)((U8 *)parameters+0x3c);
  if(!readable(definition,0x7c))return;
+ U32 weapon_type=*(U32 *)(definition+0x78);
+ if(weapon_type==1&&frag_aim_valid&&(U32)(GetTickCount()-frag_aim_time)<1500){
+  for(unsigned i=0;i<3;i++){
+   parameters[i]=frag_basis[9+i];parameters[3+i]=-frag_basis[12+i];parameters[6+i]=frag_basis[15+i];
+  }
+  frag_aim_valid=0;
+  return;
+ }
+ if(weapon_type!=0)return;
  CvFrame frame;CvPose anchor,muzzle;float ref[22];unsigned long long source_sequence;long long source_time;
  if(!snapshot(&frame,&anchor,ref))return;
  int applied=muzzle_snapshot&&muzzle_snapshot(&muzzle,&source_sequence,&source_time)&&
@@ -357,6 +370,30 @@ static void install_fire_hook(void){
  target[0]=0xe9;*(U32 *)(target+1)=(U32)hook_fire_params-(U32)(target+5);U32 ignored;VirtualProtect(target,5,old,&ignored);
  FlushInstructionCache(GetCurrentProcess(),target,5);FlushInstructionCache(GetCurrentProcess(),trampoline,10);
 }
+static void update_frag(int active,U32 rising){
+ if(!active){
+  frag_primed=0;frag_hand=-1;frag_aim_valid=0;
+  return;
+ }
+ if((rising&CV_BUTTON_DPAD_UP)&&!frag_primed){
+  frag_primed=1;frag_hand=-1;frag_aim_valid=0;
+ }
+ if(!frag_primed)return;
+ if(frag_hand<0){
+  for(int h=CV_HAND_RIGHT;h>=(int)CV_HAND_LEFT;h--){
+   if((input.active_mask&(1u<<h))&&input.grip[h]>.65f){frag_hand=h;break;}
+  }
+ }
+ if(frag_hand<0)return;
+ CvFrame frame;CvPose anchor;float ref[22];
+ if((input.active_mask&(1u<<frag_hand))&&snapshot&&snapshot(&frame,&anchor,ref)){
+  frame.aim[CV_HAND_RIGHT]=frame.aim[frag_hand];
+  if(cv_scope_ref(&frame,&anchor,ref,frag_basis)){frag_aim_valid=1;frag_aim_time=GetTickCount();}
+ }
+ if((input.active_mask&(1u<<frag_hand))&&input.grip[frag_hand]<.35f){
+  frag_primed=0;frag_hand=-1;
+ }
+}
 static void process_buttons(int active){
  if(active!=last_active){log_hex("Controller input active",active);last_active=active;}
  U32 buttons=active?input.buttons:0,rising=buttons&~previous_buttons;previous_buttons=buttons;
@@ -377,18 +414,24 @@ static void process_buttons(int active){
   navigation_direction=direction;
  }else navigation_direction=0;
  U32 desired=0;
+ update_frag(active&&!menu,rising);
  if(active&&!menu){
   if(input.trigger[1]>.55f)desired|=1;
   if(buttons&CV_BUTTON_A)desired|=2;
   if(buttons&CV_BUTTON_RIGHT_BUMPER)desired|=4;
   if(buttons&CV_BUTTON_X)desired|=8;
   if(input.trigger[0]>.55f)desired|=16;
-  if(buttons&CV_BUTTON_DPAD_UP)desired|=32;
+  if(frag_primed)desired|=32;
   if(buttons&CV_BUTTON_DPAD_DOWN)desired|=64;
   if(buttons&CV_BUTTON_DPAD_LEFT)desired|=128;
   if(rising&CV_BUTTON_DPAD_RIGHT)command("toggleprone\n");
   if(rising&CV_BUTTON_Y){pending_weapon_until=GetTickCount()+500;last_weapon_attempt=0;}
-  if(rising&CV_BUTTON_RIGHT_STICK)command("togglecrouch\n");
+  U32 now=GetTickCount();
+  if(rising&CV_BUTTON_RIGHT_STICK)crouch_after=now+80u;
+  if(frag_primed||(buttons&CV_BUTTON_DPAD_UP))crouch_after=0;
+  if(crouch_after&&(int)(now-crouch_after)>=0){
+   command("togglecrouch\n");crouch_after=0;
+  }
   if(pending_weapon_until){
    U32 now=GetTickCount();
    if((int)(pending_weapon_until-now)<0)pending_weapon_until=0;
@@ -400,7 +443,7 @@ static void process_buttons(int active){
   }
  }
  holds(desired);
- if(!active||menu){snap_ready=1;pending_weapon_until=0;}
+ if(!active||menu){snap_ready=1;pending_weapon_until=0;crouch_after=0;}
 }
 __declspec(dllexport) void __cdecl cod2vr_input_tick(void){poll_admin_command();process_buttons(read_input());}
 __declspec(dllexport) int __cdecl cod2vr_input_menu_active(void){return (*(U32 *)0x617f04&8)!=0;}

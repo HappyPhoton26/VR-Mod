@@ -13,7 +13,11 @@ PACKAGE = Path(__file__).resolve().parent
 TARGET = Path('/home/steamos/cod2-vr-work')
 GAME = Path.home() / '.local/share/Steam/steamapps/common/Call of Duty 2'
 ORIGINAL = '5b364adca51d945e3af2ec321be0646b38cb61ad129849939aca548d4eefa584'
-PREVIOUS_MOD = '8bb32ea1d39b50d332d15346c224b904b3d5c5c20e59e3932747f4d7a1bfad32'
+PREVIOUS_MODS = (
+    '314e5e4d6c783ac22e10944fd32e2a35efa615c3b51bd5e06d44fe9a9f7a65c1',
+    '8bb32ea1d39b50d332d15346c224b904b3d5c5c20e59e3932747f4d7a1bfad32',
+    'c2cfc2f455f1c967fa36962495074533978965a58643dbe56001ed0a91d721a1',
+)
 
 
 def digest(path):
@@ -39,7 +43,7 @@ def main():
     if original.exists() and digest(original) != ORIGINAL:
         raise RuntimeError('Existing original-renderer backup has an unsupported checksum.')
     installed_renderer = digest(renderer)
-    if installed_renderer not in (ORIGINAL, PREVIOUS_MOD, digest(mod)):
+    if installed_renderer not in (ORIGINAL, *PREVIOUS_MODS, digest(mod)):
         raise RuntimeError('Unsupported or modified game renderer; refusing to overwrite it.')
     if installed_renderer != ORIGINAL and not original.exists():
         raise RuntimeError('Original game renderer is missing. Verify Steam game files first.')
