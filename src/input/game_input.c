@@ -37,7 +37,7 @@ static volatile CvInputTransport *input_map;
 static volatile CvCommandTransport *command_map;
 static CvButtonsFrame input;
 static U32 last_sequence,last_changed_ms,held,previous_buttons;
-static int installed,snap_ready=1,last_active;
+static int installed,snap_ready,last_active;
 static U32 pending_weapon_until,last_weapon_attempt;
 static int menu_trigger_previous,navigation_direction;
 static U32 navigation_next_ms;
@@ -177,7 +177,8 @@ static int readable(U32 address,U32 bytes){
 static void *cursor_hints_original=(void *)0x534d40;
 static CvPickupGripState pickup_grips;
 static U32 pickup_last_scan;
-static int frag_primed,frag_hand=-1,frag_aim_valid;
+static int frag_primed,frag_hand=-1,frag_aim_valid,frag_throw_pending;
+static unsigned frag_grips_down;
 static U32 frag_aim_time,crouch_after;
 static float frag_basis[22];
 static volatile CvHandContactDebug *pickup_contact;
@@ -316,11 +317,17 @@ static void __cdecl after_fire_params(float *parameters,void *entity){
  U32 definition=*(U32 *)((U8 *)parameters+0x3c);
  if(!readable(definition,0x7c))return;
  U32 weapon_type=*(U32 *)(definition+0x78);
- if(weapon_type==1&&frag_aim_valid&&(U32)(GetTickCount()-frag_aim_time)<1500){
+ if(frag_throw_pending&&(U32)(GetTickCount()-frag_aim_time)>1500)frag_throw_pending=0;
+ if(weapon_type==1&&frag_throw_pending){
+  frag_throw_pending=0;
+  if(!frag_aim_valid||(U32)(GetTickCount()-frag_aim_time)>1500){
+   log_text("Frag used native aim: no fresh controller pose at release\n");return;
+  }
   for(unsigned i=0;i<3;i++){
    parameters[i]=frag_basis[9+i];parameters[3+i]=-frag_basis[12+i];parameters[6+i]=frag_basis[15+i];
   }
   frag_aim_valid=0;
+  log_text("Frag used throwing-hand aim\n");
   return;
  }
  if(weapon_type!=0)return;
@@ -376,26 +383,49 @@ static void install_fire_hook(void){
 }
 static void update_frag(int active,U32 rising){
  if(!active){
-  frag_primed=0;frag_hand=-1;frag_aim_valid=0;
+  frag_primed=0;frag_hand=-1;frag_aim_valid=frag_throw_pending=0;frag_grips_down=0;
   return;
  }
- if((rising&CV_BUTTON_DPAD_UP)&&!frag_primed){
-  frag_primed=1;frag_hand=-1;frag_aim_valid=0;
+ unsigned old_grips=frag_grips_down;
+ for(unsigned h=0;h<2;h++){
+  unsigned bit=1u<<h;
+  if(!(input.active_mask&bit)||input.grip[h]<.35f)frag_grips_down&=~bit;
+  else if(input.grip[h]>.65f)frag_grips_down|=bit;
  }
+ int just_primed=(rising&CV_BUTTON_DPAD_UP)&&!frag_primed;
+ if(just_primed){
+  frag_primed=1;frag_hand=-1;frag_aim_valid=frag_throw_pending=0;
+  log_text("Frag readied; waiting for throwing grip\n");
+ }
+ if(frag_throw_pending&&(U32)(GetTickCount()-frag_aim_time)>1500u)frag_throw_pending=0;
  if(!frag_primed)return;
- if(frag_hand<0){
-  for(int h=CV_HAND_RIGHT;h>=(int)CV_HAND_LEFT;h--){
-   if((input.active_mask&(1u<<h))&&input.grip[h]>.65f){frag_hand=h;break;}
-  }
- }
- if(frag_hand<0)return;
  CvFrame frame;CvPose anchor;float ref[22];
- if((input.active_mask&(1u<<frag_hand))&&snapshot&&snapshot(&frame,&anchor,ref)){
+ int have_pose=snapshot&&snapshot(&frame,&anchor,ref);
+ if(have_pose){
+  long long age=frame.predicted_display_time_ns-input.predicted_time_ns;
+  have_pose=age>=-100000000&&age<=100000000;
+ }
+ if(frag_hand<0){
+  unsigned candidates=frag_grips_down&~old_grips;
+  if(just_primed){
+   candidates|=frag_grips_down;
+   if((old_grips&1u)&&(!have_pose||left_on_foregrip(&frame)))candidates&=~1u;
+  }
+  if(!candidates)return;
+  frag_hand=(candidates&2u)?CV_HAND_RIGHT:CV_HAND_LEFT;
+  log_hex("Frag throwing hand",frag_hand);
+ }
+ unsigned bit=1u<<frag_hand;
+ if((input.active_mask&bit)&&have_pose){
   frame.aim[CV_HAND_RIGHT]=frame.aim[frag_hand];
   if(cv_scope_ref(&frame,&anchor,ref,frag_basis)){frag_aim_valid=1;frag_aim_time=GetTickCount();}
  }
- if((input.active_mask&(1u<<frag_hand))&&input.grip[frag_hand]<.35f){
-  frag_primed=0;frag_hand=-1;
+ if((input.active_mask&bit)&&(old_grips&bit)&&!(frag_grips_down&bit)){
+  frag_primed=0;frag_hand=-1;frag_throw_pending=1;
+  U32 now=GetTickCount();
+  if((U32)(now-frag_aim_time)>150)frag_aim_valid=0;
+  frag_aim_time=now;
+  log_text("Frag released by throwing grip\n");
  }
 }
 static void process_buttons(int active){
@@ -420,14 +450,14 @@ static void process_buttons(int active){
  U32 desired=0;
  update_frag(active&&!menu,rising);
  if(active&&!menu){
-  if(input.trigger[1]>.55f)desired|=1;
+  if(!frag_primed&&!frag_throw_pending&&input.trigger[1]>.55f)desired|=1;
   if(buttons&CV_BUTTON_A)desired|=2;
   if(buttons&CV_BUTTON_RIGHT_BUMPER)desired|=4;
   if(buttons&CV_BUTTON_X)desired|=8;
   if((input.active_mask&CV_INPUT_LEFT_ACTIVE)&&
      (input.trigger[0]>((held&16u)?.12f:.25f)||(buttons&CV_BUTTON_LEFT_BUMPER)))desired|=16;
   if(frag_primed)desired|=32;
-  if(buttons&CV_BUTTON_DPAD_DOWN)desired|=64;
+  if(!frag_primed&&!frag_throw_pending&&(buttons&CV_BUTTON_DPAD_DOWN))desired|=64;
   if(buttons&CV_BUTTON_DPAD_LEFT)desired|=128;
   if(rising&CV_BUTTON_DPAD_RIGHT)command("toggleprone\n");
   if(rising&CV_BUTTON_Y){pending_weapon_until=GetTickCount()+500;last_weapon_attempt=0;}
@@ -448,7 +478,7 @@ static void process_buttons(int active){
   }
  }
  holds(desired);
- if(!active||menu){snap_ready=1;pending_weapon_until=0;crouch_after=0;}
+ if(!active||menu){snap_ready=0;pending_weapon_until=0;crouch_after=0;}
 }
 __declspec(dllexport) void __cdecl cod2vr_input_tick(void){poll_admin_command();process_buttons(read_input());}
 __declspec(dllexport) int __cdecl cod2vr_input_menu_active(void){return (*(U32 *)0x617f04&8)!=0;}
@@ -476,7 +506,7 @@ static void __cdecl after_finish(void *cmd){
    ((U32 *)cmd)[4]=((int)(*yaw*(65536.f/360.f)))&65535;
    log_hex("Snap turn",turn>0?45:315);
   }
- }
+ }else snap_ready=0;
 }
 __declspec(naked) static void hook_finish(void){
  __asm{

@@ -53,7 +53,7 @@ int main(void){
  transport_init();hud_viewer_init();
  XrViewConfigurationView vc[2]={{XR_TYPE_VIEW_CONFIGURATION_VIEW},{XR_TYPE_VIEW_CONFIGURATION_VIEW}};uint32_t n;CHECK(xrEnumerateViewConfigurationViews(instance,sys,XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,2,&n,vc));if(n!=2)return 3;
  int64_t formats[64];CHECK(xrEnumerateSwapchainFormats(session,64,&n,formats));int64_t fmt=0;for(unsigned int i=0;i<n;i++)if(formats[i]==GL_SRGB8_ALPHA8)fmt=GL_SRGB8_ALPHA8;if(!fmt){fprintf(stderr,"No sRGB swapchain format\n");return 3;}
- hud_quad_init(session,fmt);scope_viewer_init(session,fmt);
+ scope_viewer_init(session,fmt);
  XrSwapchain sc[2];XrSwapchainImageOpenGLKHR images[2][16];GLuint fbo[2],depth[2];
  for(int e=0;e<2;e++){
   XrSwapchainCreateInfo ci={XR_TYPE_SWAPCHAIN_CREATE_INFO};ci.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;ci.format=fmt;ci.sampleCount=1;ci.width=vc[e].recommendedImageRectWidth;ci.height=vc[e].recommendedImageRectHeight;ci.faceCount=ci.arraySize=ci.mipCount=1;CHECK(xrCreateSwapchain(session,&ci,&sc[e]));
@@ -93,21 +93,23 @@ int main(void){
   publish_tracking(&tracking);receive_images();receive_hud();receive_scope();
   XrCompositionLayerProjectionView pv[2]={{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
   int draw=fs.shouldRender&&n==2&&(vs.viewStateFlags&XR_VIEW_STATE_ORIENTATION_VALID_BIT)&&(vs.viewStateFlags&XR_VIEW_STATE_POSITION_VALID_BIT);
-  int draw_world=draw&&game_world_fresh()&&!hud_menu;
-  if(draw_world)for(int e=0;e<2;e++){
+  int draw_menu=draw&&hud_menu&&hud_fresh();
+  int draw_world=draw&&game_world_fresh()&&!draw_menu;
+  if(draw_world||draw_menu)for(int e=0;e<2;e++){
    uint32_t index;XrSwapchainImageAcquireInfo ai={XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};CHECK(xrAcquireSwapchainImage(sc[e],&ai,&index));XrSwapchainImageWaitInfo sw={XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};sw.timeout=XR_INFINITE_DURATION;CHECK(xrWaitSwapchainImage(sc[e],&sw));
    glBindFramebuffer(GL_FRAMEBUFFER,fbo[e]);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,images[e][index].image,0);glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,depth[e]);
    if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE){fprintf(stderr,"Incomplete eye framebuffer\n");return 4;}
    glViewport(0,0,vc[e].recommendedImageRectWidth,vc[e].recommendedImageRectHeight);glEnable(GL_FRAMEBUFFER_SRGB);glEnable(GL_DEPTH_TEST);glClearColor(.015f,.02f,.04f,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-   draw_game_eye((unsigned)e);
+   XrFovf image_fov=draw_world?rendered_eye_fov((unsigned)e):views[e].fov;
+   if(draw_world)draw_game_eye((unsigned)e);
+   if(draw_menu||!hud_menu)draw_hud_eye(image_fov);
    glFlush();glBindFramebuffer(GL_FRAMEBUFFER,0);XrSwapchainImageReleaseInfo sr={XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};CHECK(xrReleaseSwapchainImage(sc[e],&sr));
-   pv[e].pose=rendered_eye_pose((unsigned)e);pv[e].fov=rendered_eye_fov((unsigned)e);pv[e].subImage.swapchain=sc[e];pv[e].subImage.imageRect.extent.width=vc[e].recommendedImageRectWidth;pv[e].subImage.imageRect.extent.height=vc[e].recommendedImageRectHeight;
+   pv[e].pose=draw_world?rendered_eye_pose((unsigned)e):views[e].pose;pv[e].fov=image_fov;pv[e].subImage.swapchain=sc[e];pv[e].subImage.imageRect.extent.width=vc[e].recommendedImageRectWidth;pv[e].subImage.imageRect.extent.height=vc[e].recommendedImageRectHeight;
   }
   XrCompositionLayerProjection layer={XR_TYPE_COMPOSITION_LAYER_PROJECTION};layer.space=space;layer.viewCount=2;layer.views=pv;
-  XrCompositionLayerQuad hud_layer,scope_layer;
-  const XrCompositionLayerBaseHeader *layers[3]={(const XrCompositionLayerBaseHeader *)&layer,0,0};
-  unsigned layer_count=draw_world?1u:0u;
-  if(draw&&hud_quad_layer(head_space,&hud_layer))layers[layer_count++]=(const XrCompositionLayerBaseHeader *)&hud_layer;
+  XrCompositionLayerQuad scope_layer;
+  const XrCompositionLayerBaseHeader *layers[2]={(const XrCompositionLayerBaseHeader *)&layer,0};
+  unsigned layer_count=draw_world||draw_menu?1u:0u;
   if(draw_world&&scope_quad_layer(head_space,&scope_layer))layers[layer_count++]=(const XrCompositionLayerBaseHeader *)&scope_layer;
   XrFrameEndInfo ei={XR_TYPE_FRAME_END_INFO};ei.displayTime=fs.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;ei.layerCount=layer_count;ei.layers=layer_count?layers:0;CHECK(xrEndFrame(session,&ei));
   if(draw)frames++;

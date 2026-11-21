@@ -143,6 +143,19 @@ static CvVec3 rotate(CvQuat q,CvVec3 v){
 }
 static CvQuat product(CvQuat a,CvQuat b){return (CvQuat){a.w*b.x+a.x*b.w+a.y*b.z-a.z*b.y,a.w*b.y-a.x*b.z+a.y*b.w+a.z*b.x,a.w*b.z+a.x*b.y-a.y*b.x+a.z*b.w,a.w*b.w-a.x*b.x-a.y*b.y-a.z*b.z};}
 static CvVec3 to_game(CvVec3 p,const float *r){return (CvVec3){-r[12]*p.x+r[15]*p.y-r[9]*p.z,-r[13]*p.x+r[16]*p.y-r[10]*p.z,-r[14]*p.x+r[17]*p.y-r[11]*p.z};}
+/* Gameplay body yaw can turn with the stick. Camera pitch and roll come
+ * from head tracking so stock hit, death, and camera effects cannot tilt VR. */
+static void level_game_ref(float *ref){
+ float x=ref[9],y=ref[10],length=root_float(x*x+y*y);
+ if(length<.001f){
+  x=ref[13];y=-ref[12];length=root_float(x*x+y*y);
+ }
+ if(!(length>.001f))return;
+ x/=length;y/=length;
+ ref[9]=x;ref[10]=y;ref[11]=0;
+ ref[12]=-y;ref[13]=x;ref[14]=0;
+ ref[15]=0;ref[16]=0;ref[17]=1;
+}
 static void tracked_ref(float *r,CvPose ep){
  CvQuat inv={-tracking_anchor.orientation.x,-tracking_anchor.orientation.y,-tracking_anchor.orientation.z,tracking_anchor.orientation.w};
  CvVec3 delta={ep.position.x-tracking_anchor.position.x,ep.position.y-tracking_anchor.position.y,ep.position.z-tracking_anchor.position.z};
@@ -373,9 +386,9 @@ static void render_hook(const void *ref){
  if(!sbs_enabled||!hook_ready||world_seen){real_render(ref);return;}
  const i32 *v=ref;
  if(v[2]<320||v[3]<200){real_render(ref);return;}
- world_seen=have_world=1;tracking_publish++;fence();memcpy(world_ref,ref,sizeof(world_ref));read_tracking();fence();tracking_publish++;
- scope_prepare((const float *)ref);
- memcpy(frontend_ref,ref,sizeof(frontend_ref));
+ world_seen=have_world=1;tracking_publish++;fence();memcpy(world_ref,ref,sizeof(world_ref));if(ipc_enabled)level_game_ref((float *)world_ref);read_tracking();fence();tracking_publish++;
+ scope_prepare((const float *)world_ref);
+ memcpy(frontend_ref,world_ref,sizeof(frontend_ref));
  if(tracking_valid){
   tracked_ref((float *)frontend_ref,tracking.head.pose);
   /* Frontend culling must contain both runtime eye frusta while backend
