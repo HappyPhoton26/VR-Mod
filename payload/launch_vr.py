@@ -44,6 +44,10 @@ def tracking_advances(timeout=3):
 
 
 def main():
+    resolution=os.environ.get('COD2VR_RESOLUTION','1920x1080')
+    samples=os.environ.get('COD2VR_MSAA','2')
+    if resolution not in ('1280x720','1920x1080','2560x1440','2880x1620') or samples not in ('1','2','4'):
+        raise ValueError('Use a supported COD2VR_RESOLUTION (1280x720, 1920x1080, 2560x1440, 2880x1620) and COD2VR_MSAA (1, 2, 4).')
     (GAME/'cod2vr-mode.txt').write_text('2\n')
     (GAME/'cod2vr-hands.txt').write_text('1\n')
     (GAME/'cod2vr-fire.txt').write_text('1\n')
@@ -68,11 +72,12 @@ def main():
     if not tracking_advances(timeout=10):
         raise RuntimeError('Headset compositor is not publishing live tracking; inspect game-viewer.log')
     if not running(GAME/'CoD2SP_s.exe'):
-        evaluate('SteamClient.Apps.SetAppResolutionOverride(2630,"2880x1620")')
+        print(f'COD2 VR render settings: {resolution}, r_aaSamples={samples}',flush=True)
+        evaluate(f'SteamClient.Apps.SetAppResolutionOverride(2630,"{resolution}")')
         args=['steam','-applaunch','2630','+set','monkeytoy','0',
-              '+set','r_mode','2880x1620','+set','r_fullscreen','0',
+              '+set','r_mode',resolution,'+set','r_fullscreen','0',
               '+set','cg_drawCrosshair','0','+set','developer','1','+set','r_smp_backend','0',
-              '+set','r_glow','0','+set','r_aasamples','1','+map','demolition']
+              '+set','r_glow','0','+set','r_aasamples',samples,'+map','demolition']
         subprocess.run(args,check=True,stdout=subprocess.DEVNULL)
     # Engine IPC avoids routing physical keyboard events into the chat/system UI.
     # Wait for actual fresh game eye frames before hiding the desktop panel.

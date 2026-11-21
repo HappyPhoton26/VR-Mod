@@ -17,6 +17,7 @@ static int hud_surfaces(void){
 static int hud_snapshot(void *source,void *destination){
  if(!source||!hud_gpu||!destination)return 0;
  void *device=*(void **)(base+0x1d1bf8);if(!device)return 0;
+ source=capture_source(device,source);if(!source)return 0;
  typedef i32 (__stdcall *Stretch)(void *,void *,const Rect *,void *,const Rect *,u32);
  typedef i32 (__stdcall *Readback)(void *,void *,void *);
  void **vt=*(void ***)device;
@@ -39,7 +40,7 @@ static void hud_publish_after(void){
  int compare=hud_prepared&&hud_before_frame==frame_count&&source==hud_before_target;
  /* Keep recent gameplay transitions transparent even if the UI catcher
   * briefly takes over while the world is missing or changing targets. */
- int opaque_menu=menu&&hud_frames_without_world>=90;
+ int opaque_menu=menu&&(hud_menu_clean||hud_frames_without_world>=90);
  int captured=(compare||opaque_menu)&&hud_snapshot(source,hud_after_surface);
  typedef struct {i32 pitch;void *bits;} HudLock;
  typedef i32 (__stdcall *Lock)(void *,HudLock *,const Rect *,u32);
@@ -68,6 +69,11 @@ static void hud_publish_after(void){
   for(u32 x=0;x<CV_HUD_WIDTH;x++){
    u32 index=4*x;int difference=0;
    if(compare)for(u32 c=0;c<3;c++){int d=(int)a[index+c]-(int)b[index+c];difference+=d<0?-d:d;}
+   if(compare&&scope_native_overlay){
+    /* The composed scope travels on its own layer. */
+    i32 dx=(i32)x-CV_HUD_WIDTH/2,dy=(i32)y-CV_HUD_HEIGHT/2;
+    if(dx*dx+dy*dy<=(i32)(CV_HUD_HEIGHT*CV_HUD_HEIGHT/4))continue;
+   }
    if(opaque_menu||difference>9){
     u8 *out=pixels+(y*CV_HUD_WIDTH+x)*4u;
     out[0]=a[index];out[1]=a[index+1];out[2]=a[index+2];out[3]=255;visible++;

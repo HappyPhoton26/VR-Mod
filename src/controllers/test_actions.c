@@ -17,7 +17,7 @@ static XrResult XRAPI_PTR attach(XrSession s,const XrSessionActionSetsAttachInfo
 static XrResult XRAPI_PTR syncactions(XrSession s,const XrActionsSyncInfo *a){(void)s;assert(a->countActiveActionSets==1);return unfocused?XR_SESSION_NOT_FOCUSED:XR_SUCCESS;}
 static XrResult XRAPI_PTR statepose(XrSession s,const XrActionStateGetInfo *g,XrActionStatePose *o){(void)s;(void)g;o->isActive=!inactive;return XR_SUCCESS;}
 static XrResult XRAPI_PTR statefloat(XrSession s,const XrActionStateGetInfo *g,XrActionStateFloat *o){(void)s;o->isActive=!inactive;o->currentState=(uintptr_t)g->action==23?.75f:.25f;return XR_SUCCESS;}
-static XrResult XRAPI_PTR stateboolean(XrSession s,const XrActionStateGetInfo *g,XrActionStateBoolean *o){(void)s;o->isActive=!inactive;uintptr_t a=(uintptr_t)g->action;o->currentState=(g->subactionPath==2&&(a==25||a==28||a==35))||(g->subactionPath==1&&a==27);return XR_SUCCESS;}
+static XrResult XRAPI_PTR stateboolean(XrSession s,const XrActionStateGetInfo *g,XrActionStateBoolean *o){(void)s;o->isActive=!inactive;uintptr_t a=(uintptr_t)g->action;o->currentState=(g->subactionPath==2&&(a==25||a==28||a==35))||(g->subactionPath==1&&(a==27||a==35));return XR_SUCCESS;}
 static XrResult XRAPI_PTR statevector(XrSession s,const XrActionStateGetInfo *g,XrActionStateVector2f *o){(void)s;(void)g;o->isActive=!inactive;o->currentState=(XrVector2f){.2f,.8f};return XR_SUCCESS;}
 static XrResult XRAPI_PTR locate(XrSpace s,XrSpace b,XrTime t,XrSpaceLocation *o){(void)s;(void)b;assert(t==expected_time);locates++;o->locationFlags=XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;o->pose.position=(XrVector3f){1,2,3};o->pose.orientation=(XrQuaternionf){0,0,0,1};return XR_SUCCESS;}
 static XrResult XRAPI_PTR resolver(XrInstance i,const char *n,PFN_xrVoidFunction *f){
@@ -38,7 +38,7 @@ int main(void){
     assert(cvcontrols_update(&f)==XR_SUCCESS);assert(locates==4);
     CvButtonsFrame buttons;cvcontrols_buttons(&buttons);assert(buttons.version==1&&buttons.size==64&&buttons.predicted_time_ns==expected_time);
     assert(buttons.active_mask==3&&buttons.trigger[1]==.75f&&buttons.stick[0][1]==.8f);
-    assert(buttons.buttons==(CV_BUTTON_A|CV_BUTTON_X|CV_BUTTON_Y|CV_BUTTON_RIGHT_BUMPER));
+    assert(buttons.buttons==(CV_BUTTON_A|CV_BUTTON_X|CV_BUTTON_Y|CV_BUTTON_RIGHT_BUMPER|CV_BUTTON_LEFT_BUMPER));
     for(int h=0;h<2;h++){assert(f.grip[h].valid==3);assert(f.aim[h].valid==3);assert(f.grip[h].pose.position.z==3);}
     inactive=1;assert(cvcontrols_update(&f)==XR_SUCCESS);assert(locates==4);
     for(int h=0;h<2;h++){assert(f.grip[h].valid==0);assert(f.aim[h].valid==0);}

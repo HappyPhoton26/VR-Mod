@@ -2,6 +2,11 @@
 #define CV_SCOPE_MATH_H
 #include "vr_pose.h"
 static int cvscope_finite(float v){union {float f;unsigned bits;} n;n.f=v;return (n.bits&0x7f800000u)!=0x7f800000u;}
+/* Controller ADS can request a scope even before the stock camera zooms. */
+static int cv_scope_requested(int controller_ads,float native_fov,float zoom,unsigned reticle){
+ return reticle&&cvscope_finite(zoom)&&zoom>=2&&zoom<=35&&
+        (controller_ads||(native_fov>1&&native_fov<40));
+}
 static CvVec3 cvscope_rotate(CvQuat q,CvVec3 v){
  CvVec3 t={2*(q.y*v.z-q.z*v.y),2*(q.z*v.x-q.x*v.z),2*(q.x*v.y-q.y*v.x)};
  return (CvVec3){v.x+q.w*t.x+q.y*t.z-q.z*t.y,v.y+q.w*t.y+q.z*t.x-q.x*t.z,v.z+q.w*t.z+q.x*t.y-q.y*t.x};

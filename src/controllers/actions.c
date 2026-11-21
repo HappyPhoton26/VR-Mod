@@ -129,7 +129,7 @@ XrResult cvcontrols_update(CvFrame *f){
                     if(k==BUTTON_B)buttons.buttons|=CV_BUTTON_B;
                     if(k==BUTTON_X)buttons.buttons|=CV_BUTTON_X;
                     if(k==BUTTON_Y)buttons.buttons|=CV_BUTTON_Y;
-                    if(k==BUMPER&&h==CV_HAND_RIGHT)buttons.buttons|=CV_BUTTON_RIGHT_BUMPER;
+                    if(k==BUMPER)buttons.buttons|=h==CV_HAND_RIGHT?CV_BUTTON_RIGHT_BUMPER:CV_BUTTON_LEFT_BUMPER;
                     if(k==MENU)buttons.buttons|=CV_BUTTON_MENU;
                     if(k==STICK_CLICK)buttons.buttons|=h?CV_BUTTON_RIGHT_STICK:CV_BUTTON_LEFT_STICK;
                     if(k==DPAD_UP)buttons.buttons|=CV_BUTTON_DPAD_UP;

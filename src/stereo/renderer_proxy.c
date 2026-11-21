@@ -34,19 +34,22 @@ static VoidFn real_begin,real_end;
 static void (__cdecl *real_shutdown)(i32);
 static CmdFn real_view,real_viewport;
 static u32 render_count,frame_count,replay_count;
+static u32 tracked_eye_mask;
 static u32 marker_start_count,marker_end_count;
 static int controller_probe_attempted;
 static int input_attempted;
 static void (__cdecl *input_tick)(void);
+static int (__cdecl *input_scope_requested)(void);
 static int sbs_enabled,hook_ready,eye=-1,world_seen,have_world;
 static void *setup_view;
 static void *left_surface,*right_surface;
-static void *readback_surface;
+static void *readback_surface,*capture_resolve;
+static u32 surface_format,capture_format,capture_width,capture_height;
 static void *hud_gpu,*hud_before_surface,*hud_after_surface;
 static CvHudTransport *hud_map;
 static CvScopeTransport *scope_map;
 static void *scope_gpu,*scope_readback;
-static int scope_active,scope_captured;
+static int scope_active,scope_captured,scope_view_applied,scope_native_overlay;
 static float scope_fov;
 static u32 scope_frames;
 static u8 scope_ref[0x58];
@@ -54,7 +57,7 @@ typedef int (__cdecl *ScopeAim)(CvPose *,unsigned long long *,long long *);
 static ScopeAim scope_aim;
 static void *hud_before_target;
 static u32 hud_frames_without_world=90;
-static u32 hud_before_frame,hud_prepared,hud_published;
+static u32 hud_before_frame,hud_prepared,hud_published,hud_menu_clean;
 static CvImageTransport *image_map;
 static volatile CvPoseTransport *pose_map;
 static CvFrame tracking;
@@ -74,8 +77,8 @@ static void log_text(const char *s){if(!log_file)return;u32 n=0,w;while(s[n])n++
 static void log_hex(const char *name,u32 v){char text[128];u32 n=0;while(*name&&n<100)text[n++]=*name++;text[n++]='=';for(int s=28;s>=0;s-=4)text[n++]="0123456789abcdef"[(v>>s)&15];text[n++]='\n';text[n]=0;log_text(text);}
 static int replace(void **slot,void *value){u32 old;if(!VirtualProtect(slot,4,0x40,&old))return 0;*slot=value;u32 dummy;VirtualProtect(slot,4,old,&dummy);return 1;}
 static void release_surfaces(void){
- void **surfaces_to_release[8]={&left_surface,&right_surface,&readback_surface,&hud_gpu,&hud_before_surface,&hud_after_surface,&scope_gpu,&scope_readback};
- for(int i=0;i<8;i++){void *s=*surfaces_to_release[i];if(s)((u32 (__stdcall *)(void *))(*(void ***)s)[2])(s);*surfaces_to_release[i]=0;}
+ void **surfaces_to_release[]={&left_surface,&right_surface,&readback_surface,&hud_gpu,&hud_before_surface,&hud_after_surface,&scope_gpu,&scope_readback,&capture_resolve};
+ for(unsigned i=0;i<sizeof surfaces_to_release/sizeof *surfaces_to_release;i++){void *s=*surfaces_to_release[i];if(s)((u32 (__stdcall *)(void *))(*(void ***)s)[2])(s);*surfaces_to_release[i]=0;}
  hud_prepared=0;
  surface_width=surface_height=0;
 }
@@ -167,17 +170,21 @@ static int inverse4(const float *m,float *inverse){
  }
  for(int row=0;row<4;row++)for(int col=0;col<4;col++)inverse[row*4+col]=a[row][col+4];return 1;
 }
-static void eye_projection(void *view){
- if(!tracking_valid)return;float *p=(float *)((u8 *)view+0x88);
- if(eye==2){p[0]=p[5]=1/tangent(scope_fov*.00872664626f);p[8]=p[9]=0;}
+static int eye_projection(void *view){
+ if(!tracking_valid)return 0;float *p=(float *)((u8 *)view+0x88);
+ if(eye==2){
+  p[0]=p[5]=1/tangent(scope_fov*.00872664626f);
+  if(scope_native_overlay)p[0]*=(float)surface_height/surface_width;
+  p[8]=p[9]=0;
+ }
  else{CvFov f=tracking.fov[eye];
  float l=tangent(f.angle_left),r=tangent(f.angle_right),u=tangent(f.angle_up),d=tangent(f.angle_down);
- if(r-l<.1f||u-d<.1f)return;
+ if(!(r-l>=.1f&&u-d>=.1f))return 0;
  p[0]=2/(r-l);p[5]=2/(u-d);p[8]=-(r+l)/(r-l);p[9]=-(u+d)/(u-d);}
  float result[16],*v=(float *)((u8 *)view+0x48);
  for(int row=0;row<4;row++)for(int col=0;col<4;col++){float value=0;for(int k=0;k<4;k++)value+=v[row*4+k]*p[k*4+col];result[row*4+col]=value;}
  memcpy((u8 *)view+0xc8,result,sizeof(result));
- inverse4(result,(float *)((u8 *)view+0x108));
+ return inverse4(result,(float *)((u8 *)view+0x108));
 }
 /* Locally verified custom renderer convention: EBX=viewParms, stack=refdef. */
 __declspec(naked) static void rebuild(void *view,const void *ref){
@@ -191,27 +198,50 @@ __declspec(naked) static void rebuild(void *view,const void *ref){
   ret
  }
 }
+typedef struct {u32 format,type,usage,pool,samples,quality,width,height;} SurfaceDesc;
+typedef struct {i32 left,top,right,bottom;} Rect;
+typedef i32 (__stdcall *CreateRT)(void *,u32,u32,u32,u32,u32,i32,void **,void *);
+static int surface_desc(void *source,SurfaceDesc *desc){
+ typedef i32 (__stdcall *GetDesc)(void *,SurfaceDesc *);
+ return source&&((GetDesc)(*(void ***)source)[12])(source,desc)>=0;
+}
 static int surfaces(void){
  void *device=*(void **)(base+0x1d1bf8);if(!device)return 0;
- u32 *target=(u32 *)(base+0x1d4820);u32 w=target[3],h=target[4];
- if(marker_start_count<4){log_hex("D3D.device",(u32)device);for(u32 i=0;i<10;i++)log_hex("RT0.word",target[i]);}
- if(!w||!h||w>8192||h>8192)return 0;
- if(left_surface&&w==surface_width&&h==surface_height)return 1;
+ SurfaceDesc desc;
+ if(!surface_desc(*(void **)(base+0x1d4820+4),&desc))return 0;
+ u32 w=desc.width,h=desc.height;
+ if(!w||!h||w>8192||h>8192||(desc.format!=21&&desc.format!=22))return 0;
+ if(left_surface&&right_surface&&w==surface_width&&h==surface_height&&desc.format==surface_format)return 1;
  release_surfaces();
  void **vt=*(void ***)device;
- typedef i32 (__stdcall *CreateRT)(void *,u32,u32,u32,u32,u32,i32,void **,void *);
- /* D3DFMT_A8R8G8B8=21; no multisampling; surface owns its COM reference. */
- i32 a=((CreateRT)vt[28])(device,w,h,21,0,0,0,&left_surface,0);
- i32 b=((CreateRT)vt[28])(device,w,h,21,0,0,0,&right_surface,0);
+ i32 a=((CreateRT)vt[28])(device,w,h,desc.format,0,0,0,&left_surface,0);
+ i32 b=((CreateRT)vt[28])(device,w,h,desc.format,0,0,0,&right_surface,0);
  log_hex("CreateRT.left",a);log_hex("CreateRT.right",b);
- if(a<0||b<0)return 0;surface_width=w;surface_height=h;return 1;
+ log_hex("Game render target MSAA type",desc.samples);
+ if(a<0||b<0)return 0;
+ surface_width=w;surface_height=h;surface_format=desc.format;return 1;
 }
-typedef struct {i32 left,top,right,bottom;} Rect;
 static int blit(void *src,void *dst,Rect *rect){
  void *dev=*(void **)(base+0x1d1bf8);if(!dev||!src||!dst)return 0;
  typedef i32 (__stdcall *Stretch)(void *,void *,const Rect *,void *,const Rect *,u32);
  i32 result=((Stretch)(*(void ***)dev)[34])(dev,src,0,dst,rect,0);
  if(result<0&&replay_count<3)log_hex("StretchRect.error",result);return result>=0;
+}
+/* Resolve first at the original size and format. HUD/scope then scale the
+ * resolved image to their smaller transport surfaces. */
+static void *capture_source(void *device,void *source){
+ SurfaceDesc desc;
+ if(!surface_desc(source,&desc))return 0;
+ if(!desc.samples)return source;
+ if(capture_resolve&&(capture_format!=desc.format||capture_width!=desc.width||capture_height!=desc.height)){
+  ((u32 (__stdcall *)(void *))(*(void ***)capture_resolve)[2])(capture_resolve);
+  capture_resolve=0;
+ }
+ if(!capture_resolve){
+  if(((CreateRT)(*(void ***)device)[28])(device,desc.width,desc.height,desc.format,0,0,0,&capture_resolve,0)<0)return 0;
+  capture_format=desc.format;capture_width=desc.width;capture_height=desc.height;
+ }
+ return blit(source,capture_resolve,0)?capture_resolve:0;
 }
 #include "hud_capture.h"
 #include "scope_capture.h"
@@ -219,7 +249,7 @@ static int copy_pixels(void *surface,u32 hand,u32 slot){
  void *dev=*(void **)(base+0x1d1bf8);if(!dev||!image_map)return 0;void **vt=*(void ***)dev;
  if(!readback_surface){
   typedef i32 (__stdcall *CreateOffscreen)(void *,u32,u32,u32,u32,void **,void *);
-  i32 r=((CreateOffscreen)vt[36])(dev,surface_width,surface_height,21,2,&readback_surface,0);
+  i32 r=((CreateOffscreen)vt[36])(dev,surface_width,surface_height,surface_format,2,&readback_surface,0);
   if(r<0){log_hex("CreateOffscreen.error",r);return 0;}
  }
  typedef i32 (__stdcall *Readback)(void *,void *,void *);
@@ -233,7 +263,7 @@ static int copy_pixels(void *surface,u32 hand,u32 slot){
  ((i32 (__stdcall *)(void *))(*(void ***)readback_surface)[14])(readback_surface);return 1;
 }
 static void publish_images(void){
- if(!ipc_enabled||!image_map||surface_width>CV_MAX_IMAGE_WIDTH||surface_height>CV_MAX_IMAGE_HEIGHT)return;
+ if(!ipc_enabled||!image_map||!tracking_valid||tracked_eye_mask!=3u||surface_width>CV_MAX_IMAGE_WIDTH||surface_height>CV_MAX_IMAGE_HEIGHT)return;
  /* Never overwrite the most recently published image pair. The reader
   * validates the selected slot's generation, independently of newer frames. */
  u32 previous=image_map->reserved[4]==1?image_map->reserved[0]:2;
@@ -269,11 +299,12 @@ static void cmd_view(void *context){
   if(view&&(view==world_view||(!world_view&&p[0]==r[0]&&p[1]==r[1]&&p[2]==r[2]&&((i32 *)view)[14]==((i32 *)world_ref)[2]))){
    if(!world_view){world_view=view;memcpy(saved_world_view,view,sizeof(saved_world_view));}
    memcpy(eye_ref,world_ref,sizeof(eye_ref));float *ref=(float *)eye_ref;
-   if(eye==2)memcpy(eye_ref,scope_ref,sizeof(eye_ref));
+   if(eye==2){memcpy(eye_ref,scope_ref,sizeof(eye_ref));scope_view_applied=1;}
    else if(tracking_valid)tracked_ref(ref,tracking.eyes[eye].pose);
    else{float distance=eye==0?1.28f:-1.28f;for(int i=0;i<3;i++)ref[6+i]+=ref[12+i]*distance;}
    rebuild(view,eye_ref);
-   eye_projection(view);
+   int projected=eye_projection(view);
+   if(eye<2&&projected)tracked_eye_mask|=1u<<eye;
   }
  }
  real_view(context);
@@ -292,25 +323,38 @@ static void cmd_viewport(void *context){
  }
  marker_end_count++;if(marker_end_count<7)log_hex("World END marker",marker_end_count);
  void *target=*(void **)(base+0x1d4820+4);
+ if(ipc_enabled&&(*(u32 *)0x617f04&8u)){
+  /* Keep the pause UI, but clear its world background before 2D draws.
+   * A pause or menu camera never replaces the tracked eye images. */
+  void *device=*(void **)(base+0x1d1bf8);
+  typedef i32 (__stdcall *ColorFill)(void *,void *,const Rect *,u32);
+  hud_menu_clean=device&&target&&((ColorFill)(*(void ***)device)[35])(device,target,0,0xff000000u)>=0;
+  if(world_view){memcpy(world_view,saved_world_view,sizeof(saved_world_view));world_view=0;}
+  eye=-1;*cursor=command+bytes;return;
+ }
  if(eye==0){
-  blit(target,left_surface,0);eye=1;
+  if(!blit(target,left_surface,0))tracked_eye_mask&=~1u;
+  eye=1;
   /* Restore the original world view before selecting a different eye. */
   *cursor=replay_cursor;ctx[1]=replay_depth;for(u32 i=0;i<replay_depth;i++)ctx[2+i]=replay_stack[i];
  }else{
   if(eye==1&&scope_active){
-   blit(target,right_surface,0);eye=2;
+   if(!blit(target,right_surface,0))tracked_eye_mask&=~2u;
+   eye=2;
    *cursor=replay_cursor;ctx[1]=replay_depth;for(u32 i=0;i<replay_depth;i++)ctx[2+i]=replay_stack[i];
    return;
   }
   if(eye==1||eye==2){
-   if(eye==2)scope_capture(target);
-   else blit(target,right_surface,0);
+   if(eye==2){
+    if(!scope_view_applied||!scope_capture_world(target))scope_capture_eye();
+   }
+   else if(!blit(target,right_surface,0))tracked_eye_mask&=~2u;
    publish_images();
    if(ipc_enabled){
     /* Headset stereo already comes from the eye surfaces. Give the game's
      * remaining 2D draws a single full-width view as their background. */
     hud_prepared=0;
-    if(blit(left_surface,target,0))hud_capture_before(target);
+    hud_capture_before(target);
    }else{
     Rect left={0,0,(i32)surface_width/2,(i32)surface_height};
     Rect right={(i32)surface_width/2,0,(i32)surface_width,(i32)surface_height};
@@ -354,7 +398,7 @@ static int install_backend(void){
  hook_ready=0;log_text("Backend table protection change failed\n");return 0;
 }
 static void begin_hook(void){
- frame_count++;hud_prepared=0;world_seen=0;have_world=0;eye=-1;scope_active=scope_captured=0;
+ frame_count++;tracked_eye_mask=0;hud_prepared=hud_menu_clean=0;world_seen=0;have_world=0;eye=-1;scope_active=scope_captured=scope_view_applied=scope_native_overlay=0;
  /* Shutdown(false) can reset the renderer without a new GetRefAPI call.
   * Reattach only after checking the current canonical/owned handler pair. */
  if(sbs_enabled)install_backend();
@@ -363,13 +407,23 @@ static void begin_hook(void){
  }
  if(!input_attempted){input_attempted=1;Handle module=LoadLibraryA("cod2vr_input.dll");
   if(module){int (__cdecl *init)(void)=(int (__cdecl *)(void))GetProcAddress(module,"cod2vr_input_init");
-   if(init&&init()){input_tick=(void (__cdecl *)(void))GetProcAddress(module,"cod2vr_input_tick");log_text("Gameplay input DLL initialized\n");}
+   if(init&&init()){
+    input_tick=(void (__cdecl *)(void))GetProcAddress(module,"cod2vr_input_tick");
+    input_scope_requested=(int (__cdecl *)(void))GetProcAddress(module,"cod2vr_input_scope_requested");
+    log_text("Gameplay input DLL initialized\n");
+   }
   }
  }
  if(input_tick)input_tick();
  real_begin();
 }
-static void end_hook(void){real_end();hud_publish_after();if(!scope_active||!scope_captured)scope_off();if(frame_count<4)log_hex("EndFrame",frame_count);}
+static void end_hook(void){
+ real_end();
+ scope_capture_native();
+ hud_publish_after();
+ if(!scope_active||!scope_captured)scope_off();
+ if(frame_count<4)log_hex("EndFrame",frame_count);
+}
 static void open_log(void){
  log_file=CreateFileA("cod2vr-original-renderer.log",0x40000000,3,0,2,0x80,0);
  if(log_file==(void *)-1)log_file=0;

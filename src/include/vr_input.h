@@ -16,6 +16,7 @@
 #define CV_BUTTON_DPAD_LEFT 512u
 #define CV_BUTTON_DPAD_RIGHT 1024u
 #define CV_BUTTON_RIGHT_BUMPER 2048u
+#define CV_BUTTON_LEFT_BUMPER 4096u
 /* Separate transport preserves the existing 280-byte tracking frame ABI. */
 typedef struct {
     unsigned int version,size;

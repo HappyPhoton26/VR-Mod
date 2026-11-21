@@ -14,6 +14,10 @@ TARGET = Path('/home/steamos/cod2-vr-work')
 GAME = Path.home() / '.local/share/Steam/steamapps/common/Call of Duty 2'
 ORIGINAL = '5b364adca51d945e3af2ec321be0646b38cb61ad129849939aca548d4eefa584'
 PREVIOUS_MODS = (
+    '503acbe705b1370e9137c25e657dec1f154c80a08221f2fe6a4514d147a6c22b',
+    'f44797045ff6ddbdd286af7ef666181ddcfbece9ef9e22717db5e4e13660089c',
+    'ecd0c6e31ef7613aba79a2cd42fccc6fb5f60cda30668a81a67f18351b6f58e2',
+    '5ff9a6179bd8ae58a357b869a39b459c41381eb08237d7682148777c23860884',
     '314e5e4d6c783ac22e10944fd32e2a35efa615c3b51bd5e06d44fe9a9f7a65c1',
     '8bb32ea1d39b50d332d15346c224b904b3d5c5c20e59e3932747f4d7a1bfad32',
     'c2cfc2f455f1c967fa36962495074533978965a58643dbe56001ed0a91d721a1',

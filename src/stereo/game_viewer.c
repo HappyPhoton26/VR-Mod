@@ -93,21 +93,22 @@ int main(void){
   publish_tracking(&tracking);receive_images();receive_hud();receive_scope();
   XrCompositionLayerProjectionView pv[2]={{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
   int draw=fs.shouldRender&&n==2&&(vs.viewStateFlags&XR_VIEW_STATE_ORIENTATION_VALID_BIT)&&(vs.viewStateFlags&XR_VIEW_STATE_POSITION_VALID_BIT);
-  if(draw)for(int e=0;e<2;e++){
+  int draw_world=draw&&game_world_fresh()&&!hud_menu;
+  if(draw_world)for(int e=0;e<2;e++){
    uint32_t index;XrSwapchainImageAcquireInfo ai={XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};CHECK(xrAcquireSwapchainImage(sc[e],&ai,&index));XrSwapchainImageWaitInfo sw={XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};sw.timeout=XR_INFINITE_DURATION;CHECK(xrWaitSwapchainImage(sc[e],&sw));
    glBindFramebuffer(GL_FRAMEBUFFER,fbo[e]);glFramebufferTexture2D(GL_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,GL_TEXTURE_2D,images[e][index].image,0);glFramebufferRenderbuffer(GL_FRAMEBUFFER,GL_DEPTH_ATTACHMENT,GL_RENDERBUFFER,depth[e]);
    if(glCheckFramebufferStatus(GL_FRAMEBUFFER)!=GL_FRAMEBUFFER_COMPLETE){fprintf(stderr,"Incomplete eye framebuffer\n");return 4;}
    glViewport(0,0,vc[e].recommendedImageRectWidth,vc[e].recommendedImageRectHeight);glEnable(GL_FRAMEBUFFER_SRGB);glEnable(GL_DEPTH_TEST);glClearColor(.015f,.02f,.04f,1);glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
    draw_game_eye((unsigned)e);
    glFlush();glBindFramebuffer(GL_FRAMEBUFFER,0);XrSwapchainImageReleaseInfo sr={XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};CHECK(xrReleaseSwapchainImage(sc[e],&sr));
-   pv[e].pose=rendered_eye_pose((unsigned)e,views[e].pose);pv[e].fov=rendered_eye_fov((unsigned)e,views[e].fov);pv[e].subImage.swapchain=sc[e];pv[e].subImage.imageRect.extent.width=vc[e].recommendedImageRectWidth;pv[e].subImage.imageRect.extent.height=vc[e].recommendedImageRectHeight;
+   pv[e].pose=rendered_eye_pose((unsigned)e);pv[e].fov=rendered_eye_fov((unsigned)e);pv[e].subImage.swapchain=sc[e];pv[e].subImage.imageRect.extent.width=vc[e].recommendedImageRectWidth;pv[e].subImage.imageRect.extent.height=vc[e].recommendedImageRectHeight;
   }
   XrCompositionLayerProjection layer={XR_TYPE_COMPOSITION_LAYER_PROJECTION};layer.space=space;layer.viewCount=2;layer.views=pv;
   XrCompositionLayerQuad hud_layer,scope_layer;
   const XrCompositionLayerBaseHeader *layers[3]={(const XrCompositionLayerBaseHeader *)&layer,0,0};
-  unsigned layer_count=draw?1u:0u;
+  unsigned layer_count=draw_world?1u:0u;
   if(draw&&hud_quad_layer(head_space,&hud_layer))layers[layer_count++]=(const XrCompositionLayerBaseHeader *)&hud_layer;
-  if(draw&&scope_quad_layer(head_space,&scope_layer))layers[layer_count++]=(const XrCompositionLayerBaseHeader *)&scope_layer;
+  if(draw_world&&scope_quad_layer(head_space,&scope_layer))layers[layer_count++]=(const XrCompositionLayerBaseHeader *)&scope_layer;
   XrFrameEndInfo ei={XR_TYPE_FRAME_END_INFO};ei.displayTime=fs.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;ei.layerCount=layer_count;ei.layers=layer_count?layers:0;CHECK(xrEndFrame(session,&ei));
   if(draw)frames++;
   if(clock_s()-last>5){float dx=views[1].pose.position.x-views[0].pose.position.x,dy=views[1].pose.position.y-views[0].pose.position.y,dz=views[1].pose.position.z-views[0].pose.position.z;printf("Submitted compositor frames %lu; game uploads %lu; eye separation %.4f m; pose validity 0x%llx; grips %u/%u\n",frames,game_uploads,sqrtf(dx*dx+dy*dy+dz*dz),(unsigned long long)vs.viewStateFlags,tracking.grip[0].valid,tracking.grip[1].valid);last=clock_s();}

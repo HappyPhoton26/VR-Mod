@@ -1,7 +1,7 @@
 #include "../include/vr_scope.h"
 static CvScopeTransport *scope_data;
 static unsigned char scope_pixels[CV_SCOPE_SLOT_BYTES];
-static unsigned scope_sequence,scope_uploaded,scope_visible;
+static unsigned scope_sequence,scope_uploaded,scope_visible,scope_native_reticle;
 static double scope_received_at;
 static GLuint scope_texture,scope_fbo;
 static XrSwapchain scope_chain;
@@ -34,7 +34,7 @@ static void receive_scope(void){
  for(unsigned i=3;i<CV_SCOPE_SLOT_BYTES;i+=4)scope_pixels[i]=255;
  glBindTexture(GL_TEXTURE_2D,scope_texture);
  glTexSubImage2D(GL_TEXTURE_2D,0,0,0,CV_SCOPE_SIZE,CV_SCOPE_SIZE,GL_BGRA,GL_UNSIGNED_BYTE,scope_pixels);
- scope_sequence=sequence;scope_visible=1;scope_received_at=clock_s();
+ scope_sequence=sequence;scope_visible=1;scope_native_reticle=h.reserved[1];scope_received_at=clock_s();
 }
 static void scope_draw_circle(void){
  glDisable(GL_DEPTH_TEST);glDisable(GL_BLEND);
@@ -52,6 +52,7 @@ static void scope_draw_circle(void){
   glVertex2f(.94f*c,.94f*s);glVertex2f(.985f*c,.985f*s);
  }
  glEnd();
+ if(scope_native_reticle)return;
  /* Shared monoscopic reticle follows the same muzzle direction as firing. */
  glLineWidth(2);glBegin(GL_LINES);
  glVertex2f(-.94f,0);glVertex2f(.94f,0);glVertex2f(0,-.94f);glVertex2f(0,.94f);

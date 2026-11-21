@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install COD2 VR
+Comment=Install or update the Call of Duty 2 VR mod on this Steam Frame, then launch it
+Exec=sh -c "exec \\"\\$(dirname \\"\\$0\\")/Install-on-Steam-Frame.sh\\"" %k
+Icon=steam_icon_2630
+Terminal=false
+Categories=Game;

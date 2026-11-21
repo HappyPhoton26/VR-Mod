@@ -3,6 +3,11 @@
 #include <math.h>
 #include <stdio.h>
 int main(void){
+ assert(cv_scope_requested(1,80,10,1));
+ assert(cv_scope_requested(0,10,10,1));
+ assert(!cv_scope_requested(0,80,10,1));
+ assert(!cv_scope_requested(1,80,10,0));
+ assert(!cv_scope_requested(1,80,NAN,1));
  CvFrame f={.version=1,.size=sizeof f};CvPose anchor={.orientation={0,0,0,1}};
  float ref[22]={0},scope[22];ref[6]=100;ref[7]=200;ref[8]=60;ref[9]=ref[13]=ref[17]=1;
  f.aim[1]=(CvTrackedPose){.valid=3,.pose={.orientation={0,0,0,1},.position={.2f,-.3f,-.4f}}};

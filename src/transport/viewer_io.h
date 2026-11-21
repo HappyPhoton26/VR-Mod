@@ -15,7 +15,7 @@ static unsigned int game_sequence;
 static unsigned int game_texture_width,game_texture_height;
 static unsigned long game_uploads;
 static CvFrame game_rendered_pose;
-static int game_rendered_pose_valid;
+static double game_frame_received_at;
 static void *open_map(const char *name,size_t size){
     int fd=open(name,O_RDWR|O_CREAT,0600);
     if(fd<0){perror(name);exit(1);}
@@ -79,6 +79,7 @@ static void receive_images(void){
         have_rendered_pose=rendered_pose.version==CV_FRAME_VERSION&&rendered_pose.size==sizeof(rendered_pose)&&
             (rendered_pose.eyes[0].valid&3u)==3u&&(rendered_pose.eyes[1].valid&3u)==3u;
     }
+    if(!have_rendered_pose)return;
     const unsigned char *pixels=(const unsigned char *)game_images+sizeof(header);
     if(ring)pixels+=(size_t)slot*2u*CV_IMAGE_EYE_BYTES;
     for(unsigned e=0;e<2;e++)memcpy(game_snapshot+e*CV_IMAGE_EYE_BYTES,pixels+e*header.eye_stride,bytes);
@@ -94,16 +95,17 @@ static void receive_images(void){
     }
     game_texture_width=header.width;game_texture_height=header.height;
     game_sequence=seq;game_uploads++;
-    game_rendered_pose=rendered_pose;game_rendered_pose_valid=have_rendered_pose;
+    game_rendered_pose=rendered_pose;game_frame_received_at=clock_s();
 }
-static XrPosef rendered_eye_pose(unsigned eye,XrPosef fallback){
-    if(!game_rendered_pose_valid)return fallback;
+static int game_world_fresh(void){
+    return game_uploads&&clock_s()-game_frame_received_at<.35;
+}
+static XrPosef rendered_eye_pose(unsigned eye){
     CvPose p=game_rendered_pose.eyes[eye].pose;
     return (XrPosef){{p.orientation.x,p.orientation.y,p.orientation.z,p.orientation.w},
                      {p.position.x,p.position.y,p.position.z}};
 }
-static XrFovf rendered_eye_fov(unsigned eye,XrFovf fallback){
-    if(!game_rendered_pose_valid)return fallback;
+static XrFovf rendered_eye_fov(unsigned eye){
     CvFov f=game_rendered_pose.fov[eye];
     return (XrFovf){f.angle_left,f.angle_right,f.angle_up,f.angle_down};
 }

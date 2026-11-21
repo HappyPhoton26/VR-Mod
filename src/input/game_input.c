@@ -299,6 +299,9 @@ static void install_pickup_hook(void){
  VirtualProtect(site,5,old,&ignored);FlushInstructionCache(GetCurrentProcess(),site,5);
  log_text("Grip pickup server hook installed: 65cm reach, one item per squeeze\n");
 }
+__declspec(dllexport) int __cdecl cod2vr_input_scope_requested(void){
+ return (held&16u)&&!*(U32 *)0x617f04&&(U32)(GetTickCount()-last_changed_ms)<=250u;
+}
 static void __cdecl after_fire_params(float *parameters,void *entity){
 #ifdef CV_ABI_SELFTEST
  abi_seen_parameters=parameters;abi_seen_entity=entity;
@@ -327,7 +330,8 @@ static void __cdecl after_fire_params(float *parameters,void *entity){
   cv_fire_apply(parameters,(U32)entity,*(U32 *)(definition+0x78),&muzzle,source_sequence,source_time,&frame,ref+6);
  if(!applied){
   float scoped[22];
-  if(*(U32 *)(definition+0x78)!=0||!readable(definition,0x284)||!*(U32 *)(definition+0x278)||ref[4]>=40||
+  if(!readable(definition,0x284)||
+     !cv_scope_requested(cod2vr_input_scope_requested(),ref[4],*(float *)(definition+0x268),*(U32 *)(definition+0x278))||
      !cv_scope_ref(&frame,&anchor,ref,scoped))return;
   for(unsigned i=0;i<3;i++){
    parameters[i]=scoped[9+i];parameters[3+i]=-scoped[12+i];
@@ -420,7 +424,8 @@ static void process_buttons(int active){
   if(buttons&CV_BUTTON_A)desired|=2;
   if(buttons&CV_BUTTON_RIGHT_BUMPER)desired|=4;
   if(buttons&CV_BUTTON_X)desired|=8;
-  if(input.trigger[0]>.55f)desired|=16;
+  if((input.active_mask&CV_INPUT_LEFT_ACTIVE)&&
+     (input.trigger[0]>((held&16u)?.12f:.25f)||(buttons&CV_BUTTON_LEFT_BUMPER)))desired|=16;
   if(frag_primed)desired|=32;
   if(buttons&CV_BUTTON_DPAD_DOWN)desired|=64;
   if(buttons&CV_BUTTON_DPAD_LEFT)desired|=128;

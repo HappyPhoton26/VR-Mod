@@ -27,8 +27,12 @@ Optional: `./Play-COD2-VR.sh --check` validates without changes;
 - Steam and SteamVR/OpenXR must already be running with headset tracking.
   The existing launcher expects Steam's local debugging endpoint on port 8080
   to set resolution and hide the flat theater panel.
-- Default resolution: 2880x1620; launcher starts the `demolition` mission.
+- Default render settings are 1920×1080 with 2× MSAA. The launcher starts the
+  `demolition` mission. On a fresh launch, set `COD2VR_MSAA=1` to disable MSAA
+  or `COD2VR_RESOLUTION=2560x1440` to test a higher resolution.
 - Menu/View opens menus; right bumper reloads; grips pick up nearby items.
+- Hold the left trigger or left bumper with a sniper rifle equipped to use its
+  magnified scope.
 - D-pad Up prepares a frag. Squeeze with the throwing hand, aim, then release
   that grip to throw.
 - Squeeze the left grip near the rifle foregrip to steady it with both hands.
